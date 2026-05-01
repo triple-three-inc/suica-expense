@@ -61,12 +61,27 @@ export default function Home() {
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("auth_error");
     const freeeError = params.get("freee_error");
+    const slackToken = params.get("slack");
     if (authError) {
       setError(`Googleログインエラー: ${authError}`);
       window.history.replaceState({}, "", window.location.pathname);
     } else if (freeeError) {
       setError(`freee連携エラー: ${freeeError}`);
       window.history.replaceState({}, "", window.location.pathname);
+    } else if (slackToken) {
+      window.history.replaceState({}, "", window.location.pathname);
+      fetch(`/api/slack/handoff?token=${encodeURIComponent(slackToken)}`)
+        .then(async (r) => {
+          const data = (await r.json()) as { rows?: TransactionRow[]; error?: string };
+          if (!r.ok) throw new Error(data.error ?? "リンクの読み込みに失敗");
+          if (data.rows && data.rows.length > 0) {
+            setRows((prev) => [...prev, ...data.rows!]);
+            setWarning(`Slackから ${data.rows.length} 件読み込みました`);
+          }
+        })
+        .catch((e) => {
+          setError(e instanceof Error ? e.message : "Slackリンクのエラー");
+        });
     }
   }, []);
 
