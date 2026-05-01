@@ -160,10 +160,15 @@ export default function Home() {
       const text = await res.text();
       if (!res.ok) {
         if (res.status === 401) setMe({ loggedIn: false, freee: null });
+        let detail = "";
+        try {
+          const errJson = JSON.parse(text) as { error?: string };
+          if (errJson.error) detail = `: ${errJson.error}`;
+        } catch {}
         throw new Error(
           res.status === 504
             ? "AIマッチングが時間切れ（504）。件数を減らしてやり直してください"
-            : `マッチングに失敗 (${res.status})`,
+            : `マッチングに失敗 (${res.status})${detail}`,
         );
       }
       let data: {
