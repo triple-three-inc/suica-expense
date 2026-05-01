@@ -73,11 +73,16 @@ export default function Home() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ trips }),
       });
+      const text = await res.text();
       if (!res.ok) {
         if (res.status === 401) setMe({ loggedIn: false });
-        throw new Error("マッチングに失敗しました");
+        throw new Error(
+          res.status === 504
+            ? "AIマッチングが時間切れ（504）。件数を減らしてやり直してください"
+            : `マッチングに失敗 (${res.status})`,
+        );
       }
-      const data = (await res.json()) as {
+      let data: {
         matches: Array<{
           tripId: string;
           eventId: string | null;
@@ -87,6 +92,11 @@ export default function Home() {
         }>;
         eventsByDate: Record<string, EventSuggestion[]>;
       };
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error("予期しないサーバー応答");
+      }
 
       setEventsByDate((prev) => ({ ...prev, ...(data.eventsByDate ?? {}) }));
       const infoMap: Record<string, MatchInfo> = {};
@@ -119,14 +129,32 @@ export default function Home() {
 
     try {
       const allRows: TransactionRow[] = [];
+      const failures: string[] = [];
       for (const file of Array.from(files)) {
-        const formData = new FormData();
-        formData.append("file", file);
-        const res = await fetch("/api/parse", { method: "POST", body: formData });
-        const data = (await res.json()) as ParseResponse & { error?: string };
-        if (!res.ok) throw new Error(data.error ?? "解析に失敗しました");
-        allRows.push(...data.rows);
-        if (data.warning) setWarning(data.warning);
+        try {
+          const formData = new FormData();
+          formData.append("file", file);
+          const res = await fetch("/api/parse", { method: "POST", body: formData });
+          const text = await res.text();
+          let data: (ParseResponse & { error?: string }) | null = null;
+          try {
+            data = JSON.parse(text) as ParseResponse & { error?: string };
+          } catch {
+            const hint =
+              res.status === 504
+                ? "解析が時間切れ（504）。1枚ずつアップロードしてみてください"
+                : `サーバーエラー (${res.status})`;
+            throw new Error(hint);
+          }
+          if (!res.ok) throw new Error(data?.error ?? "解析に失敗しました");
+          allRows.push(...(data?.rows ?? []));
+          if (data?.warning) setWarning(data.warning);
+        } catch (e) {
+          failures.push(`${file.name}: ${e instanceof Error ? e.message : "不明"}`);
+        }
+      }
+      if (failures.length > 0) {
+        setError(`一部の解析に失敗しました\n${failures.join("\n")}`);
       }
 
       let filteredRows = allRows;

@@ -5,6 +5,7 @@ import { matchTripsToEvents, type MatchableTrip, type MatchableEvent } from "@/l
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
+export const maxDuration = 60;
 
 type RequestBody = {
   trips: Array<{
