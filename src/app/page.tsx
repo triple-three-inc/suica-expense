@@ -460,7 +460,7 @@ export default function Home() {
               </div>
             )}
 
-            <div className="overflow-x-auto">
+            <div className="hidden overflow-x-auto sm:block">
               <table className="w-full text-sm">
                 <thead className="bg-zinc-50 text-left text-xs uppercase text-zinc-600 dark:bg-zinc-800/50 dark:text-zinc-400">
                   <tr>
@@ -538,6 +538,71 @@ export default function Home() {
                 </tbody>
               </table>
             </div>
+
+            {/* Mobile cards */}
+            <ul className="divide-y divide-zinc-200 sm:hidden dark:divide-zinc-800">
+              {rows.map((row) => (
+                <li key={row.id} className="p-4 space-y-2">
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="flex items-center gap-2">
+                      <input
+                        type="date"
+                        value={row.date}
+                        onChange={(e) => updateRow(row.id, "date", e.target.value)}
+                        className="rounded border border-zinc-200 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:text-zinc-100"
+                      />
+                      <input
+                        type="time"
+                        value={row.time ?? ""}
+                        onChange={(e) => updateRow(row.id, "time", e.target.value)}
+                        className="w-20 rounded border border-zinc-200 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:text-zinc-100"
+                      />
+                    </div>
+                    <button
+                      onClick={() => deleteRow(row.id)}
+                      className="text-xs text-red-600 hover:text-red-700 dark:text-red-400"
+                      aria-label="削除"
+                    >
+                      削除
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={row.from}
+                      onChange={(e) => updateRow(row.id, "from", e.target.value)}
+                      placeholder="乗車駅"
+                      className="flex-1 rounded border border-zinc-200 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:text-zinc-100"
+                    />
+                    <span className="text-zinc-400">→</span>
+                    <input
+                      type="text"
+                      value={row.to}
+                      onChange={(e) => updateRow(row.id, "to", e.target.value)}
+                      placeholder="降車駅"
+                      className="flex-1 rounded border border-zinc-200 bg-transparent px-2 py-1 text-sm text-zinc-900 dark:border-zinc-700 dark:text-zinc-100"
+                    />
+                  </div>
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs text-zinc-500 dark:text-zinc-400">¥</span>
+                    <input
+                      type="number"
+                      value={row.amount}
+                      onChange={(e) => updateRow(row.id, "amount", e.target.value)}
+                      className="w-24 rounded border border-zinc-200 bg-transparent px-2 py-1 text-right text-sm text-zinc-900 dark:border-zinc-700 dark:text-zinc-100"
+                    />
+                    <div className="flex-1">
+                      <PurposeCell
+                        row={row}
+                        events={eventsByDate[row.date] ?? []}
+                        info={matchInfo[row.id]}
+                        onChange={(value) => updateRow(row.id, "purpose", value)}
+                      />
+                    </div>
+                  </div>
+                </li>
+              ))}
+            </ul>
           </section>
         )}
       </main>
