@@ -1,5 +1,24 @@
 import { GoogleGenAI, Type } from "@google/genai";
 
+async function withRetry<T>(fn: () => Promise<T>, maxAttempts = 4): Promise<T> {
+  let lastErr: unknown;
+  for (let i = 0; i < maxAttempts; i++) {
+    try {
+      return await fn();
+    } catch (e) {
+      lastErr = e;
+      const msg = e instanceof Error ? e.message : String(e);
+      const isTransient = /503|UNAVAILABLE|429|RESOURCE_EXHAUSTED|overload|high demand/i.test(
+        msg,
+      );
+      if (!isTransient || i === maxAttempts - 1) throw e;
+      const delay = 1000 * Math.pow(2, i) + Math.floor(Math.random() * 500);
+      await new Promise((r) => setTimeout(r, delay));
+    }
+  }
+  throw lastErr;
+}
+
 export type MatchableTrip = {
   id: string;
   date: string;
@@ -74,40 +93,43 @@ export async function matchTripsToEvents(
     eventsByDate,
   };
 
-  const response = await ai.models.generateContent({
-    model: "gemini-2.5-flash",
-    contents: [
-      {
-        role: "user",
-        parts: [
-          { text: PROMPT },
-          { text: `入力:\n${JSON.stringify(input, null, 2)}` },
-        ],
-      },
-    ],
-    config: {
-      responseMimeType: "application/json",
-      responseSchema: {
-        type: Type.OBJECT,
-        properties: {
-          matches: {
-            type: Type.ARRAY,
-            items: {
-              type: Type.OBJECT,
-              properties: {
-                tripId: { type: Type.STRING },
-                eventId: { type: Type.STRING },
-                confidence: { type: Type.STRING },
-                reason: { type: Type.STRING },
+  const callGemini = () =>
+    ai.models.generateContent({
+      model: "gemini-2.5-flash",
+      contents: [
+        {
+          role: "user",
+          parts: [
+            { text: PROMPT },
+            { text: `入力:\n${JSON.stringify(input, null, 2)}` },
+          ],
+        },
+      ],
+      config: {
+        responseMimeType: "application/json",
+        responseSchema: {
+          type: Type.OBJECT,
+          properties: {
+            matches: {
+              type: Type.ARRAY,
+              items: {
+                type: Type.OBJECT,
+                properties: {
+                  tripId: { type: Type.STRING },
+                  eventId: { type: Type.STRING },
+                  confidence: { type: Type.STRING },
+                  reason: { type: Type.STRING },
+                },
+                required: ["tripId", "confidence", "reason"],
               },
-              required: ["tripId", "confidence", "reason"],
             },
           },
+          required: ["matches"],
         },
-        required: ["matches"],
       },
-    },
-  });
+    });
+
+  const response = await withRetry(callGemini);
 
   const text = response.text;
   if (!text) throw new Error("AIマッチング: 空のレスポンス");

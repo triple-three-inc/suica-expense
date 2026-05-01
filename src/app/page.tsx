@@ -193,10 +193,13 @@ export default function Home() {
           const errJson = JSON.parse(text) as { error?: string };
           if (errJson.error) detail = `: ${errJson.error}`;
         } catch {}
+        const overloaded = /503|UNAVAILABLE|overload|high demand/i.test(detail);
         throw new Error(
           res.status === 504
             ? "AIマッチングが時間切れ（504）。件数を減らしてやり直してください"
-            : `マッチングに失敗 (${res.status})${detail}`,
+            : overloaded
+              ? "Gemini側が混雑中です。少し待ってから「AIで再マッチ」を押してください"
+              : `マッチングに失敗 (${res.status})${detail}`,
         );
       }
       let data: {
