@@ -36,6 +36,14 @@ type MatchInfo = {
   reason: string;
 };
 
+const STORAGE_KEY = "suica-expense:state-v1";
+
+type PersistedState = {
+  rows: TransactionRow[];
+  eventsByDate: Record<string, EventSuggestion[]>;
+  matchInfo: Record<string, MatchInfo>;
+};
+
 export default function Home() {
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -50,8 +58,20 @@ export default function Home() {
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<string | null>(null);
   const [pendingSlackMatch, setPendingSlackMatch] = useState(false);
+  const [hydrated, setHydrated] = useState(false);
 
   useEffect(() => {
+    try {
+      const raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) {
+        const saved = JSON.parse(raw) as PersistedState;
+        if (saved.rows) setRows(saved.rows);
+        if (saved.eventsByDate) setEventsByDate(saved.eventsByDate);
+        if (saved.matchInfo) setMatchInfo(saved.matchInfo);
+      }
+    } catch {}
+    setHydrated(true);
+
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => setMe(data as Me))
@@ -86,6 +106,14 @@ export default function Home() {
         });
     }
   }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    try {
+      const payload: PersistedState = { rows, eventsByDate, matchInfo };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
+    } catch {}
+  }, [hydrated, rows, eventsByDate, matchInfo]);
 
   async function submitToFreee() {
     if (!me?.loggedIn || !me.freee?.connected) return;
