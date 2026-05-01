@@ -70,12 +70,18 @@ type FreeeMe = {
     id: number;
     email: string;
     display_name?: string;
-    companies?: Array<{ id: number; name: string; role: string; default_company?: boolean }>;
+    companies?: Array<{
+      id: number;
+      display_name?: string;
+      name?: string;
+      role: string;
+      default_company?: boolean;
+    }>;
   };
 };
 
 export async function fetchFreeeMe(accessToken: string): Promise<FreeeMe> {
-  const res = await fetch(ME_URL, {
+  const res = await fetch(`${ME_URL}?companies=true`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!res.ok) throw new Error(`freee /users/me failed: ${await res.text()}`);
