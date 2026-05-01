@@ -49,6 +49,7 @@ export default function Home() {
   const [excludeHolidays, setExcludeHolidays] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [submitResult, setSubmitResult] = useState<string | null>(null);
+  const [pendingSlackMatch, setPendingSlackMatch] = useState(false);
 
   useEffect(() => {
     fetch("/api/auth/me")
@@ -77,6 +78,7 @@ export default function Home() {
           if (data.rows && data.rows.length > 0) {
             setRows((prev) => [...prev, ...data.rows!]);
             setWarning(`Slackから ${data.rows.length} 件読み込みました`);
+            setPendingSlackMatch(true);
           }
         })
         .catch((e) => {
@@ -202,6 +204,27 @@ export default function Home() {
     },
     [me],
   );
+
+  useEffect(() => {
+    if (!pendingSlackMatch) return;
+    if (!me?.loggedIn) return;
+    if (rows.length === 0) return;
+    setPendingSlackMatch(false);
+    (async () => {
+      setMatching(true);
+      try {
+        const { rows: matched } = await aiMatch(rows);
+        setRows((prev) => {
+          const map = new Map(matched.map((r) => [r.id, r]));
+          return prev.map((r) => map.get(r.id) ?? r);
+        });
+      } catch (e) {
+        setWarning(e instanceof Error ? `AI連携: ${e.message}` : "AI連携に失敗");
+      } finally {
+        setMatching(false);
+      }
+    })();
+  }, [pendingSlackMatch, me, rows, aiMatch]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
