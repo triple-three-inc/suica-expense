@@ -1,5 +1,4 @@
 import { NextResponse } from "next/server";
-import { parsePdfToTransactions } from "@/lib/parse-pdf";
 import { parseImageToTransactions } from "@/lib/parse-image";
 import type { ParseResponse } from "@/lib/types";
 
@@ -28,6 +27,7 @@ export async function POST(request: Request) {
 
     if (isPdf) {
       const buffer = new Uint8Array(await file.arrayBuffer());
+      const { parsePdfToTransactions } = await import("@/lib/parse-pdf");
       const rows = await parsePdfToTransactions(buffer, file.name);
       const response: ParseResponse = {
         rows,
