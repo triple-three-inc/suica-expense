@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useState, useCallback } from "react";
+import { useEffect, useState, useCallback, useRef } from "react";
 import type { TransactionRow, ParseResponse } from "@/lib/types";
 import { fetchJapaneseHolidays, isNonWorkingDay } from "@/lib/japanese-holidays";
 
@@ -775,10 +775,32 @@ function PurposeCell({
   onChange: (value: string) => void;
 }) {
   const [open, setOpen] = useState(false);
+  const [pos, setPos] = useState<{ top: number; left: number } | null>(null);
+  const buttonRef = useRef<HTMLButtonElement>(null);
   const showBadge = info && row.purpose && info.summary && row.purpose === info.summary;
 
+  function toggleOpen() {
+    if (!open && buttonRef.current) {
+      const rect = buttonRef.current.getBoundingClientRect();
+      const width = 288;
+      const height = 256;
+      const margin = 8;
+      const spaceBelow = window.innerHeight - rect.bottom;
+      const top =
+        spaceBelow >= height + margin
+          ? rect.bottom + 4
+          : Math.max(margin, rect.top - height - 4);
+      const left = Math.min(
+        Math.max(margin, rect.right - width),
+        window.innerWidth - width - margin,
+      );
+      setPos({ top, left });
+    }
+    setOpen((v) => !v);
+  }
+
   return (
-    <div className="relative flex items-center gap-1">
+    <div className="flex items-center gap-1">
       <input
         type="text"
         value={row.purpose ?? ""}
@@ -794,22 +816,26 @@ function PurposeCell({
       {events.length > 0 && (
         <>
           <button
+            ref={buttonRef}
             type="button"
-            onClick={() => setOpen((v) => !v)}
+            onClick={toggleOpen}
             className="shrink-0 rounded p-1 text-zinc-400 hover:bg-zinc-100 hover:text-zinc-700 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
             aria-label={`${events.length}件の予定から選択`}
             title={`${events.length}件の予定`}
           >
             📅
           </button>
-          {open && (
+          {open && pos && (
             <>
               <div
-                className="fixed inset-0 z-10"
+                className="fixed inset-0 z-40"
                 onClick={() => setOpen(false)}
                 aria-hidden="true"
               />
-              <ul className="absolute right-0 top-full z-20 mt-1 max-h-64 w-72 overflow-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800">
+              <ul
+                style={{ position: "fixed", top: pos.top, left: pos.left, width: 288 }}
+                className="z-50 max-h-64 overflow-auto rounded-md border border-zinc-200 bg-white shadow-lg dark:border-zinc-700 dark:bg-zinc-800"
+              >
                 {events.map((ev) => {
                   const isAiPick = info?.eventId === ev.id;
                   const time = ev.isAllDay
