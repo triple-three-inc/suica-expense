@@ -11,6 +11,7 @@ const PROMPT = `この画像はモバイルSuicaの利用履歴画面です。
 
 各取引について以下の情報を抽出してください:
 - 日付（YYYY-MM-DD形式）
+- 時刻（HH:MM形式、降車（出場）の時刻。読み取れない場合は空文字）
 - 乗車駅（入場駅）
 - 降車駅（出場駅）
 - 金額（正の整数、円）
@@ -50,6 +51,7 @@ export async function parseImageToTransactions(
             type: Type.OBJECT,
             properties: {
               date: { type: Type.STRING },
+              time: { type: Type.STRING },
               from: { type: Type.STRING },
               to: { type: Type.STRING },
               amount: { type: Type.NUMBER },
@@ -96,12 +98,19 @@ export async function parseImageToTransactions(
 function parseGeminiJson(text: string): TransactionRow[] {
 
   const parsed = JSON.parse(text) as {
-    rows: Array<{ date: string; from: string; to: string; amount: number }>;
+    rows: Array<{
+      date: string;
+      time?: string;
+      from: string;
+      to: string;
+      amount: number;
+    }>;
   };
 
   return parsed.rows.map((r) => ({
     id: crypto.randomUUID(),
     date: r.date,
+    time: r.time?.match(/^\d{1,2}:\d{2}$/) ? r.time : undefined,
     from: r.from,
     to: r.to,
     amount: Math.abs(Math.round(r.amount)),
