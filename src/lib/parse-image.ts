@@ -58,11 +58,17 @@ function buildPrompt(): string {
 【時刻】
 時刻が画像にある場合は HH:MM 形式で。なければ空文字。
 
+【絶対ルール】
+- 乗車駅と降車駅の両方が画像に明記されていない場合は、その行を出力に含めないこと
+- "Unknown Station"、"不明"、空文字などプレースホルダーを駅名として絶対に使わないこと
+- 物販・チャージ・現金・カード・カード照会の行は、駅名が一見書かれているように見えても出力に含めない
+- 同じ画像を何度処理しても同じ結果を返すこと（推測ではなく明示的な情報のみ使用）
+
 【出力】各取引について:
 - date (YYYY-MM-DD)
 - time (HH:MM または空文字)
-- from (乗車駅名)
-- to (降車駅名)
+- from (乗車駅名・実在する駅名のみ)
+- to (降車駅名・実在する駅名のみ)
 - amount (正の整数、円)`;
 }
 
@@ -88,6 +94,7 @@ export async function parseImageToTransactions(
   const mimeType = file.type || "image/png";
 
   const config = {
+    temperature: 0,
     responseMimeType: "application/json",
     responseSchema: {
       type: Type.OBJECT,
@@ -154,13 +161,23 @@ function parseGeminiJson(text: string): TransactionRow[] {
     }>;
   };
 
-  return parsed.rows.map((r) => ({
-    id: crypto.randomUUID(),
-    date: r.date,
-    time: r.time?.match(/^\d{1,2}:\d{2}$/) ? r.time : undefined,
-    from: r.from,
-    to: r.to,
-    amount: Math.abs(Math.round(r.amount)),
-    purpose: "",
-  }));
+  const INVALID_STATION = /^(unknown|unknown station|不明|なし|none|n\/a|-|—)$/i;
+  return parsed.rows
+    .filter((r) => {
+      const from = (r.from ?? "").trim();
+      const to = (r.to ?? "").trim();
+      if (!from || !to) return false;
+      if (INVALID_STATION.test(from) || INVALID_STATION.test(to)) return false;
+      if (!Number.isFinite(r.amount) || Math.abs(r.amount) <= 0) return false;
+      return true;
+    })
+    .map((r) => ({
+      id: crypto.randomUUID(),
+      date: r.date,
+      time: r.time?.match(/^\d{1,2}:\d{2}$/) ? r.time : undefined,
+      from: r.from.trim(),
+      to: r.to.trim(),
+      amount: Math.abs(Math.round(r.amount)),
+      purpose: "",
+    }));
 }
