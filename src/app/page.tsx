@@ -4,9 +4,22 @@ import { useEffect, useState, useCallback } from "react";
 import type { TransactionRow, ParseResponse } from "@/lib/types";
 import { fetchJapaneseHolidays, isNonWorkingDay } from "@/lib/japanese-holidays";
 
+type FreeeStatus = {
+  connected: boolean;
+  userName?: string;
+  userEmail?: string;
+  companyId?: number;
+};
+
 type Me =
-  | { loggedIn: false }
-  | { loggedIn: true; email: string; name?: string; picture?: string };
+  | { loggedIn: false; freee: null }
+  | {
+      loggedIn: true;
+      email: string;
+      name?: string;
+      picture?: string;
+      freee: FreeeStatus | null;
+    };
 
 type EventSuggestion = {
   id: string;
@@ -34,22 +47,76 @@ export default function Home() {
   const [matching, setMatching] = useState(false);
   const [holidays, setHolidays] = useState<Record<string, string>>({});
   const [excludeHolidays, setExcludeHolidays] = useState(true);
+  const [submitting, setSubmitting] = useState(false);
+  const [submitResult, setSubmitResult] = useState<string | null>(null);
 
   useEffect(() => {
     fetch("/api/auth/me")
       .then((r) => r.json())
       .then((data) => setMe(data as Me))
-      .catch(() => setMe({ loggedIn: false }));
+      .catch(() => setMe({ loggedIn: false, freee: null }));
 
     fetchJapaneseHolidays().then(setHolidays);
 
     const params = new URLSearchParams(window.location.search);
     const authError = params.get("auth_error");
+    const freeeError = params.get("freee_error");
     if (authError) {
       setError(`Googleログインエラー: ${authError}`);
       window.history.replaceState({}, "", window.location.pathname);
+    } else if (freeeError) {
+      setError(`freee連携エラー: ${freeeError}`);
+      window.history.replaceState({}, "", window.location.pathname);
     }
   }, []);
+
+  async function submitToFreee() {
+    if (!me?.loggedIn || !me.freee?.connected) return;
+    if (rows.length === 0) return;
+    if (
+      !confirm(
+        `${rows.length}件の交通費をfreeeの経費精算申請として登録します。よろしいですか？`,
+      )
+    )
+      return;
+
+    setSubmitting(true);
+    setSubmitResult(null);
+    setError(null);
+
+    try {
+      const res = await fetch("/api/freee/submit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          rows: rows.map((r) => ({
+            date: r.date,
+            from: r.from,
+            to: r.to,
+            amount: r.amount,
+            purpose: r.purpose,
+          })),
+        }),
+      });
+      const text = await res.text();
+      let data: { error?: string; id?: number; title?: string; applicationNumber?: string; totalAmount?: number; count?: number } = {};
+      try {
+        data = JSON.parse(text);
+      } catch {
+        throw new Error(`予期しない応答 (${res.status})`);
+      }
+      if (!res.ok) {
+        throw new Error(data.error ?? `freee登録に失敗 (${res.status})`);
+      }
+      setSubmitResult(
+        `freeeに登録しました：「${data.title}」(申請番号 ${data.applicationNumber ?? "—"}, ${data.count}件, ¥${data.totalAmount?.toLocaleString()})`,
+      );
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "freee登録エラー");
+    } finally {
+      setSubmitting(false);
+    }
+  }
 
   const aiMatch = useCallback(
     async (
@@ -75,7 +142,7 @@ export default function Home() {
       });
       const text = await res.text();
       if (!res.ok) {
-        if (res.status === 401) setMe({ loggedIn: false });
+        if (res.status === 401) setMe({ loggedIn: false, freee: null });
         throw new Error(
           res.status === 504
             ? "AIマッチングが時間切れ（504）。件数を減らしてやり直してください"
@@ -372,12 +439,26 @@ export default function Home() {
                 </button>
                 <button
                   onClick={downloadCsv}
-                  className="rounded-md bg-blue-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-blue-700"
+                  className="rounded-md border border-zinc-300 px-3 py-2 text-sm text-zinc-700 transition hover:bg-zinc-50 dark:border-zinc-700 dark:text-zinc-200 dark:hover:bg-zinc-800"
                 >
-                  CSVダウンロード
+                  CSV
                 </button>
+                {me?.loggedIn && me.freee?.connected && (
+                  <button
+                    onClick={submitToFreee}
+                    disabled={submitting}
+                    className="rounded-md bg-emerald-600 px-3 py-2 text-sm font-medium text-white transition hover:bg-emerald-700 disabled:opacity-50"
+                  >
+                    {submitting ? "送信中..." : "🟢 freeeに登録"}
+                  </button>
+                )}
               </div>
             </div>
+            {submitResult && (
+              <div className="mx-4 mt-3 rounded-md bg-emerald-50 p-3 text-sm text-emerald-700 dark:bg-emerald-950 dark:text-emerald-300">
+                ✅ {submitResult}
+              </div>
+            )}
 
             <div className="overflow-x-auto">
               <table className="w-full text-sm">
@@ -480,29 +561,58 @@ function AuthBadge({ me }: { me: Me | null }) {
     );
   }
   return (
-    <div className="flex items-center gap-2 text-sm">
-      {me.picture && (
-        // eslint-disable-next-line @next/next/no-img-element
-        <img
-          src={me.picture}
-          alt=""
-          className="h-7 w-7 rounded-full"
-          referrerPolicy="no-referrer"
-        />
-      )}
-      <div className="text-right">
-        <div className="font-medium text-zinc-900 dark:text-zinc-100">
-          {me.name ?? me.email}
+    <div className="flex flex-col items-end gap-2">
+      <div className="flex items-center gap-2 text-sm">
+        {me.picture && (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img
+            src={me.picture}
+            alt=""
+            className="h-7 w-7 rounded-full"
+            referrerPolicy="no-referrer"
+          />
+        )}
+        <div className="text-right">
+          <div className="font-medium text-zinc-900 dark:text-zinc-100">
+            {me.name ?? me.email}
+          </div>
+          <form action="/api/auth/google/logout" method="post" className="leading-none">
+            <button
+              type="submit"
+              className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+            >
+              ログアウト
+            </button>
+          </form>
         </div>
-        <form action="/api/auth/google/logout" method="post" className="leading-none">
-          <button
-            type="submit"
-            className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
-          >
-            ログアウト
-          </button>
-        </form>
       </div>
+      <FreeeAuthBadge freee={me.freee} />
+    </div>
+  );
+}
+
+function FreeeAuthBadge({ freee }: { freee: FreeeStatus | null }) {
+  if (!freee?.connected) {
+    return (
+      <a
+        href="/api/auth/freee/start"
+        className="inline-flex items-center gap-2 rounded-md border border-emerald-300 bg-emerald-50 px-3 py-1.5 text-xs font-medium text-emerald-700 shadow-sm transition hover:bg-emerald-100 dark:border-emerald-700 dark:bg-emerald-950 dark:text-emerald-300 dark:hover:bg-emerald-900/40"
+      >
+        🟢 freeeを連携
+      </a>
+    );
+  }
+  return (
+    <div className="flex items-center gap-2 text-xs text-emerald-700 dark:text-emerald-300">
+      <span>✅ freee連携中{freee.userName ? `（${freee.userName}）` : ""}</span>
+      <form action="/api/auth/freee/logout" method="post" className="leading-none">
+        <button
+          type="submit"
+          className="text-xs text-zinc-500 hover:underline dark:text-zinc-400"
+        >
+          解除
+        </button>
+      </form>
     </div>
   );
 }

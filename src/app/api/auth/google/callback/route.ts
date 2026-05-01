@@ -18,7 +18,7 @@ export async function GET(request: Request) {
     return NextResponse.redirect(`${origin}/?auth_error=missing_params`);
   }
 
-  const expectedState = await consumeOAuthState();
+  const expectedState = await consumeOAuthState("google");
   if (!expectedState || expectedState !== state) {
     return NextResponse.redirect(`${origin}/?auth_error=state_mismatch`);
   }

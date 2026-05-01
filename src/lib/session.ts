@@ -4,13 +4,25 @@ import { createCipheriv, createDecipheriv, createHash, randomBytes } from "crypt
 const COOKIE_NAME = "suica_session";
 const ALGO = "aes-256-gcm";
 
+export type FreeeAuth = {
+  accessToken: string;
+  refreshToken?: string;
+  expiresAt: number;
+  companyId?: number;
+  userName?: string;
+  userEmail?: string;
+};
+
 export type Session = {
+  // Google (primary auth)
   email: string;
   name?: string;
   picture?: string;
   accessToken: string;
   refreshToken?: string;
   expiresAt: number;
+  // freee (optional)
+  freee?: FreeeAuth;
 };
 
 function getKey(): Buffer {
@@ -64,11 +76,13 @@ export async function clearSession(): Promise<void> {
   store.set(COOKIE_NAME, "", { path: "/", maxAge: 0 });
 }
 
-const STATE_COOKIE = "suica_oauth_state";
+function stateCookieName(provider: string) {
+  return `suica_oauth_state_${provider}`;
+}
 
-export async function setOAuthState(state: string): Promise<void> {
+export async function setOAuthState(provider: string, state: string): Promise<void> {
   const store = await cookies();
-  store.set(STATE_COOKIE, state, {
+  store.set(stateCookieName(provider), state, {
     httpOnly: true,
     secure: process.env.NODE_ENV === "production",
     sameSite: "lax",
@@ -77,10 +91,17 @@ export async function setOAuthState(state: string): Promise<void> {
   });
 }
 
-export async function consumeOAuthState(): Promise<string | null> {
+export async function consumeOAuthState(provider: string): Promise<string | null> {
   const store = await cookies();
-  const c = store.get(STATE_COOKIE);
+  const name = stateCookieName(provider);
+  const c = store.get(name);
   if (!c) return null;
-  store.set(STATE_COOKIE, "", { path: "/", maxAge: 0 });
+  store.set(name, "", { path: "/", maxAge: 0 });
   return c.value;
+}
+
+export async function updateFreeeAuth(freee: FreeeAuth | undefined): Promise<void> {
+  const current = await getSession();
+  if (!current) throw new Error("先にGoogleログインが必要です");
+  await setSession({ ...current, freee });
 }
