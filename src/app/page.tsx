@@ -44,6 +44,24 @@ type PersistedState = {
   matchInfo: Record<string, MatchInfo>;
 };
 
+function rowFingerprint(r: TransactionRow): string {
+  return `${r.date}|${r.time ?? ""}|${r.from}|${r.to}|${r.amount}`;
+}
+
+function appendUnique(
+  existing: TransactionRow[],
+  incoming: TransactionRow[],
+): { merged: TransactionRow[]; addedCount: number } {
+  const seen = new Set(existing.map(rowFingerprint));
+  const fresh = incoming.filter((r) => {
+    const fp = rowFingerprint(r);
+    if (seen.has(fp)) return false;
+    seen.add(fp);
+    return true;
+  });
+  return { merged: [...existing, ...fresh], addedCount: fresh.length };
+}
+
 export default function Home() {
   const [rows, setRows] = useState<TransactionRow[]>([]);
   const [loading, setLoading] = useState(false);
@@ -96,8 +114,21 @@ export default function Home() {
           const data = (await r.json()) as { rows?: TransactionRow[]; error?: string };
           if (!r.ok) throw new Error(data.error ?? "リンクの読み込みに失敗");
           if (data.rows && data.rows.length > 0) {
-            setRows((prev) => [...prev, ...data.rows!]);
-            setWarning(`Slackから ${data.rows.length} 件読み込みました`);
+            const incoming = data.rows;
+            setRows((prev) => {
+              const { merged, addedCount } = appendUnique(prev, incoming);
+              const skipped = incoming.length - addedCount;
+              if (addedCount === 0) {
+                setWarning(`Slackの${incoming.length}件はすべて既に取り込み済みです`);
+              } else if (skipped > 0) {
+                setWarning(
+                  `Slackから ${addedCount} 件追加（重複 ${skipped} 件は除外）`,
+                );
+              } else {
+                setWarning(`Slackから ${addedCount} 件読み込みました`);
+              }
+              return merged;
+            });
             setPendingSlackMatch(true);
           }
         })
@@ -308,11 +339,20 @@ export default function Home() {
         }
       }
 
-      setRows((prev) => [...prev, ...filteredRows]);
-      if (me?.loggedIn && filteredRows.length > 0) {
+      let newlyAdded: TransactionRow[] = [];
+      setRows((prev) => {
+        const { merged, addedCount } = appendUnique(prev, filteredRows);
+        const skipped = filteredRows.length - addedCount;
+        if (skipped > 0) {
+          setWarning(`${addedCount} 件追加（重複 ${skipped} 件は除外）`);
+        }
+        newlyAdded = merged.slice(prev.length);
+        return merged;
+      });
+      if (me?.loggedIn && newlyAdded.length > 0) {
         setMatching(true);
         try {
-          const { rows: matched } = await aiMatch(filteredRows);
+          const { rows: matched } = await aiMatch(newlyAdded);
           setRows((prev) => {
             const matchedById = new Map(matched.map((r) => [r.id, r]));
             return prev.map((r) => matchedById.get(r.id) ?? r);
