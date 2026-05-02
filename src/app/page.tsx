@@ -42,7 +42,15 @@ type PersistedState = {
   rows: TransactionRow[];
   eventsByDate: Record<string, EventSuggestion[]>;
   matchInfo: Record<string, MatchInfo>;
+  selectedMonth?: string;
 };
+
+function previousMonth(): string {
+  const d = new Date();
+  d.setDate(1);
+  d.setMonth(d.getMonth() - 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
+}
 
 function rowFingerprint(r: TransactionRow): string {
   return `${r.date}|${r.time ?? ""}|${r.from}|${r.to}|${r.amount}`;
@@ -77,6 +85,7 @@ export default function Home() {
   const [submitResult, setSubmitResult] = useState<string | null>(null);
   const [pendingSlackMatch, setPendingSlackMatch] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [selectedMonth, setSelectedMonth] = useState<string>(previousMonth());
 
   useEffect(() => {
     try {
@@ -86,6 +95,7 @@ export default function Home() {
         if (saved.rows) setRows(saved.rows);
         if (saved.eventsByDate) setEventsByDate(saved.eventsByDate);
         if (saved.matchInfo) setMatchInfo(saved.matchInfo);
+        if (typeof saved.selectedMonth === "string") setSelectedMonth(saved.selectedMonth);
       }
     } catch {}
     setHydrated(true);
@@ -141,17 +151,24 @@ export default function Home() {
   useEffect(() => {
     if (!hydrated) return;
     try {
-      const payload: PersistedState = { rows, eventsByDate, matchInfo };
+      const payload: PersistedState = { rows, eventsByDate, matchInfo, selectedMonth };
       localStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
     } catch {}
-  }, [hydrated, rows, eventsByDate, matchInfo]);
+  }, [hydrated, rows, eventsByDate, matchInfo, selectedMonth]);
+
+  const filteredRows =
+    selectedMonth === ""
+      ? rows
+      : rows.filter((r) => r.date.startsWith(selectedMonth));
+  const isFiltered = selectedMonth !== "" && rows.length !== filteredRows.length;
 
   async function submitToFreee() {
     if (!me?.loggedIn || !me.freee?.connected) return;
-    if (rows.length === 0) return;
+    if (filteredRows.length === 0) return;
+    const monthLabel = selectedMonth ? `（${selectedMonth}）` : "";
     if (
       !confirm(
-        `${rows.length}件の交通費をfreeeの経費精算申請として登録します。よろしいですか？`,
+        `${filteredRows.length}件の交通費${monthLabel}をfreeeの経費精算申請として登録します。よろしいですか？`,
       )
     )
       return;
@@ -165,7 +182,7 @@ export default function Home() {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          rows: rows.map((r) => ({
+          rows: filteredRows.map((r) => ({
             date: r.date,
             from: r.from,
             to: r.to,
@@ -410,11 +427,11 @@ export default function Home() {
   }
 
   function downloadCsv() {
-    if (rows.length === 0) return;
+    if (filteredRows.length === 0) return;
     const header = ["日付", "時刻", "乗車駅", "降車駅", "金額", "用件"];
     const csv = [
       header.join(","),
-      ...rows.map((r) =>
+      ...filteredRows.map((r) =>
         [r.date, r.time ?? "", r.from, r.to, r.amount, r.purpose ?? ""]
           .map((v) => `"${String(v).replace(/"/g, '""')}"`)
           .join(","),
@@ -424,12 +441,13 @@ export default function Home() {
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
     link.href = url;
-    link.download = `suica-expense-${new Date().toISOString().slice(0, 10)}.csv`;
+    const tag = selectedMonth || new Date().toISOString().slice(0, 10);
+    link.download = `suica-expense-${tag}.csv`;
     link.click();
     URL.revokeObjectURL(url);
   }
 
-  const totalAmount = rows.reduce((sum, r) => sum + r.amount, 0);
+  const totalAmount = filteredRows.reduce((sum, r) => sum + r.amount, 0);
 
   return (
     <div className="min-h-screen bg-zinc-50 dark:bg-zinc-950">
@@ -511,7 +529,7 @@ export default function Home() {
             </p>
           )}
 
-          <div className="mt-4 flex items-center justify-between gap-3 border-t border-zinc-100 pt-3 dark:border-zinc-800">
+          <div className="mt-4 flex flex-col gap-3 border-t border-zinc-100 pt-3 sm:flex-row sm:items-center sm:justify-between dark:border-zinc-800">
             <label className="flex cursor-pointer items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
               <input
                 type="checkbox"
@@ -521,6 +539,23 @@ export default function Home() {
               />
               土日祝を自動除外（出勤日のみ取り込む）
             </label>
+            <div className="flex items-center gap-2 text-sm text-zinc-700 dark:text-zinc-300">
+              <span>対象月：</span>
+              <input
+                type="month"
+                value={selectedMonth}
+                onChange={(e) => setSelectedMonth(e.target.value)}
+                className="rounded border border-zinc-300 bg-transparent px-2 py-1 text-sm dark:border-zinc-700"
+              />
+              <button
+                type="button"
+                onClick={() => setSelectedMonth("")}
+                className="text-xs text-blue-600 hover:underline dark:text-blue-400"
+                title="月の絞り込みを解除"
+              >
+                全期間
+              </button>
+            </div>
           </div>
         </section>
 
@@ -529,7 +564,12 @@ export default function Home() {
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-200 p-4 dark:border-zinc-800">
               <div>
                 <p className="text-sm text-zinc-600 dark:text-zinc-400">
-                  {rows.length} 件 / 合計
+                  {filteredRows.length} 件 / 合計
+                  {isFiltered && (
+                    <span className="ml-1 text-xs text-zinc-500 dark:text-zinc-500">
+                      （全{rows.length}件中）
+                    </span>
+                  )}
                 </p>
                 <p className="text-xl font-bold text-zinc-900 dark:text-zinc-50">
                   ¥{totalAmount.toLocaleString()}
@@ -588,7 +628,7 @@ export default function Home() {
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-200 dark:divide-zinc-800">
-                  {rows.map((row) => (
+                  {filteredRows.map((row) => (
                     <tr key={row.id}>
                       <td className="px-3 py-2">
                         <input
@@ -655,7 +695,7 @@ export default function Home() {
 
             {/* Mobile cards */}
             <ul className="divide-y divide-zinc-200 sm:hidden dark:divide-zinc-800">
-              {rows.map((row) => (
+              {filteredRows.map((row) => (
                 <li key={row.id} className="p-4 space-y-2">
                   <div className="flex items-center justify-between gap-2">
                     <div className="flex items-center gap-2">
