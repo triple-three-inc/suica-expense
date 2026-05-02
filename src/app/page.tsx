@@ -292,12 +292,13 @@ export default function Home() {
   useEffect(() => {
     if (!pendingSlackMatch) return;
     if (!me?.loggedIn) return;
-    if (rows.length === 0) return;
+    if (filteredRows.length === 0) return;
     setPendingSlackMatch(false);
+    const target = filteredRows;
     (async () => {
       setMatching(true);
       try {
-        const { rows: matched } = await aiMatch(rows);
+        const { rows: matched } = await aiMatch(target);
         setRows((prev) => {
           const map = new Map(matched.map((r) => [r.id, r]));
           return prev.map((r) => map.get(r.id) ?? r);
@@ -308,7 +309,7 @@ export default function Home() {
         setMatching(false);
       }
     })();
-  }, [pendingSlackMatch, me, rows, aiMatch]);
+  }, [pendingSlackMatch, me, filteredRows, aiMatch]);
 
   async function handleFiles(files: FileList | null) {
     if (!files || files.length === 0) return;
@@ -388,13 +389,17 @@ export default function Home() {
   }
 
   async function rematchAll() {
-    if (!me || !me.loggedIn || rows.length === 0) return;
+    if (!me || !me.loggedIn || filteredRows.length === 0) return;
     setMatching(true);
     setWarning(null);
     try {
-      const cleared = rows.map((r) => ({ ...r, purpose: "" }));
+      const targetIds = new Set(filteredRows.map((r) => r.id));
+      const cleared = filteredRows.map((r) => ({ ...r, purpose: "" }));
       const { rows: matched } = await aiMatch(cleared);
-      setRows(matched);
+      setRows((prev) => {
+        const map = new Map(matched.map((r) => [r.id, r]));
+        return prev.map((r) => (targetIds.has(r.id) ? (map.get(r.id) ?? r) : r));
+      });
     } catch (e) {
       setWarning(e instanceof Error ? e.message : "再取得に失敗");
     } finally {
