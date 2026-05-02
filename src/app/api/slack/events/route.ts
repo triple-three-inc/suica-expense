@@ -136,6 +136,7 @@ async function handleMessage(event: SlackMessageEvent) {
       process.env.GOOGLE_REDIRECT_URI?.replace(/\/api\/auth\/.*/, "") ??
       "https://suica-expense-333.vercel.app";
     const link = `${baseUrl}/?slack=${token}`;
+    const linkTooLong = link.length > 7500;
 
     const total = allRows.reduce((s, r) => s + r.amount, 0);
     const summary = allRows
@@ -148,10 +149,13 @@ async function handleMessage(event: SlackMessageEvent) {
     const more = allRows.length > 5 ? `\n…他 ${allRows.length - 5} 件` : "";
     const failNote =
       failures.length > 0 ? `\n\n⚠️ 一部失敗:\n${failures.join("\n")}` : "";
+    const longNote = linkTooLong
+      ? `\n\n⚠️ 件数が多くリンクが長くなっています。リンクを開けない場合は、PDFを月単位で出力してから送り直してください。`
+      : "";
 
     await postSlackMessage(
       event.channel,
-      `${allRows.length}件読み取りました（合計 ¥${total.toLocaleString()}）\n${summary}${more}${failNote}\n\nレビュー・freee登録 → ${link}`,
+      `${allRows.length}件読み取りました（合計 ¥${total.toLocaleString()}）\n${summary}${more}${failNote}${longNote}\n\nレビュー・freee登録 → ${link}`,
       { thread_ts: event.ts },
     );
   } catch (e) {
