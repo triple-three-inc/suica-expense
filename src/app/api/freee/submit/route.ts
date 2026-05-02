@@ -1,10 +1,11 @@
 import { NextResponse } from "next/server";
-import { getSession } from "@/lib/session";
+import { getSession, updateFreeeAuth } from "@/lib/session";
 import {
   createExpenseApplication,
   fetchTransitTemplate,
   type ExpenseLine,
 } from "@/lib/freee-expense";
+import { fetchFreeeMe } from "@/lib/freee-oauth";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -30,12 +31,26 @@ export async function POST(request: Request) {
   if (!session.freee) {
     return NextResponse.json({ error: "freee_not_connected" }, { status: 401 });
   }
-  const companyId = session.freee.companyId;
+  let companyId = session.freee.companyId;
   if (!companyId) {
-    return NextResponse.json(
-      { error: "company_id_unknown" },
-      { status: 400 },
-    );
+    try {
+      const me = await fetchFreeeMe(session.freee.accessToken);
+      const fallback =
+        me.user.companies?.find((c) => c.default_company) ?? me.user.companies?.[0];
+      if (fallback?.id) {
+        companyId = fallback.id;
+        await updateFreeeAuth({ ...session.freee, companyId });
+      }
+    } catch {}
+    if (!companyId) {
+      return NextResponse.json(
+        {
+          error:
+            "freeeの会社IDが取得できません。freeeに会社が紐付いているか確認し、画面右上の「解除」→ 再連携してください",
+        },
+        { status: 400 },
+      );
+    }
   }
 
   let body: RequestBody;

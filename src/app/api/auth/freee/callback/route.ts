@@ -28,12 +28,13 @@ export async function GET(request: Request) {
     const me = await fetchFreeeMe(tokens.access_token);
     const defaultCompany =
       me.user.companies?.find((c) => c.default_company) ?? me.user.companies?.[0];
+    const companyId = tokens.company_id ?? defaultCompany?.id;
 
     await updateFreeeAuth({
       accessToken: tokens.access_token,
       refreshToken: tokens.refresh_token,
       expiresAt: Date.now() + tokens.expires_in * 1000,
-      companyId: defaultCompany?.id,
+      companyId,
       userName: me.user.display_name,
       userEmail: me.user.email,
     });
