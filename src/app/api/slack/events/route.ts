@@ -60,17 +60,25 @@ export async function POST(request: Request) {
   return new NextResponse("ok", { status: 200 });
 }
 
+function isPdfFile(f: SlackFile): boolean {
+  if ((f.mimetype ?? "").includes("pdf")) return true;
+  return /\.pdf$/i.test(f.name ?? "");
+}
+
+function isImageFile(f: SlackFile): boolean {
+  if ((f.mimetype ?? "").startsWith("image/")) return true;
+  return /\.(png|jpe?g|heic|heif|webp)$/i.test(f.name ?? "");
+}
+
 async function handleMessage(event: SlackMessageEvent) {
   try {
-    const files = (event.files ?? []).filter((f) =>
-      (f.mimetype ?? "").startsWith("image/"),
-    );
+    const files = (event.files ?? []).filter((f) => isPdfFile(f) || isImageFile(f));
 
     if (files.length === 0) {
       if (event.text && event.text.length > 0) {
         await postSlackMessage(
           event.channel,
-          "Suicaのスクショ画像（PNG/JPG）を送ってください。複数枚OKです。",
+          "Suicaのスクショ画像（PNG/JPG/HEIC）またはPDFを送ってください。複数ファイルOKです。",
           { thread_ts: event.ts },
         );
       }
@@ -95,11 +103,17 @@ async function handleMessage(event: SlackMessageEvent) {
         const url = f.url_private_download ?? f.url_private;
         if (!url) throw new Error("ファイルのダウンロードURLが取得できませんでした");
         const { buffer, mimeType } = await downloadSlackFile(url);
-        const fileObj = new File([buffer as BlobPart], f.name ?? "image.png", {
-          type: f.mimetype ?? mimeType,
-        });
-        const rows = await parseImageToTransactions(fileObj, apiKey);
-        allRows.push(...rows);
+        if (isPdfFile(f)) {
+          const { parsePdfToTransactions } = await import("@/lib/parse-pdf");
+          const rows = await parsePdfToTransactions(buffer, f.name ?? "file.pdf");
+          allRows.push(...rows);
+        } else {
+          const fileObj = new File([buffer as BlobPart], f.name ?? "image.png", {
+            type: f.mimetype ?? mimeType,
+          });
+          const rows = await parseImageToTransactions(fileObj, apiKey);
+          allRows.push(...rows);
+        }
       } catch (e) {
         failures.push(`${f.name ?? f.id}: ${e instanceof Error ? e.message : "不明"}`);
       }
