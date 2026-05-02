@@ -73,7 +73,26 @@ export async function POST(request: Request) {
       }
     }
 
-    const matches = await matchTripsToEvents(trips, eventsByDate, apiKey);
+    const BATCH_SIZE = 20;
+    const CONCURRENCY = 3;
+    const batches: MatchableTrip[][] = [];
+    for (let i = 0; i < trips.length; i += BATCH_SIZE) {
+      batches.push(trips.slice(i, i + BATCH_SIZE));
+    }
+
+    const matches: Awaited<ReturnType<typeof matchTripsToEvents>> = [];
+    for (let i = 0; i < batches.length; i += CONCURRENCY) {
+      const slice = batches.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        slice.map((batch) => {
+          const batchDates = new Set(batch.map((t) => t.date));
+          const batchEvents: Record<string, MatchableEvent[]> = {};
+          for (const d of batchDates) batchEvents[d] = eventsByDate[d] ?? [];
+          return matchTripsToEvents(batch, batchEvents, apiKey);
+        }),
+      );
+      for (const r of results) matches.push(...r);
+    }
 
     const summaryById: Record<string, string> = {};
     for (const list of Object.values(eventsByDate)) {
